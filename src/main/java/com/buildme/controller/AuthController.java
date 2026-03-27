@@ -11,10 +11,12 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -65,23 +67,39 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> me(@RequestAttribute("userId") String userId) {
+    public ResponseEntity<?> me(Authentication authentication) {
+
+        // 🔐 Get userId from Spring Security context
+        String userId = (String) authentication.getPrincipal();
+
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Unauthorized"));
+        }
 
         return userRepository.findById(userId)
-                .map(u -> ResponseEntity.ok(Map.ofEntries(
-                        Map.entry("id", u.getId()),
-                        Map.entry("name", u.getName()),
-                        Map.entry("email", u.getEmail()),
-                        Map.entry("totalPoints", u.getTotalPoints()),
-                        Map.entry("streakDays", u.getStreakDays()),
-                        Map.entry("estimatedBandScore", u.getEstimatedBandScore()),
-                        Map.entry("earnedBadges", u.getEarnedBadges()),
-                        Map.entry("writing", u.getWriting() != null ? u.getWriting() : "N/A"),
-                        Map.entry("reading", u.getReading() != null ? u.getReading() : "N/A"),
-                        Map.entry("listening", u.getListening() != null ? u.getListening() : "N/A"),
-                        Map.entry("speaking", u.getSpeaking() != null ? u.getSpeaking() : "N/A")
-                )))
-                .orElse(ResponseEntity.notFound().build());
+                .map(u -> {
+
+                    // ✅ Use HashMap (safe for null values)
+                    Map<String, Object> response = new HashMap<>();
+
+                    response.put("id", u.getId());
+                    response.put("name", u.getName());
+                    response.put("email", u.getEmail());
+                    response.put("totalPoints", u.getTotalPoints());
+                    response.put("streakDays", u.getStreakDays());
+                    response.put("estimatedBandScore", u.getEstimatedBandScore());
+                    response.put("earnedBadges", u.getEarnedBadges());
+
+                    response.put("writing", u.getWriting() != null ? u.getWriting() : "N/A");
+                    response.put("reading", u.getReading() != null ? u.getReading() : "N/A");
+                    response.put("listening", u.getListening() != null ? u.getListening() : "N/A");
+                    response.put("speaking", u.getSpeaking() != null ? u.getSpeaking() : "N/A");
+
+                    return ResponseEntity.ok(response);
+                })
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "User not found")));
     }
 
     @Data static class RegisterRequest {

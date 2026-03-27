@@ -20,6 +20,7 @@ public class PortfolioController {
     private final NoteRepository           noteRepository;
     private final CertificateRepository    certificateRepository;
 
+
     @GetMapping
     public ResponseEntity<?> getPortfolio(Authentication auth) {
         String userId = auth.getName();
