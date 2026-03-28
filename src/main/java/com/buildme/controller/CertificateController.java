@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,6 +27,8 @@ public class CertificateController {
     private final QuizAttemptRepository quizAttemptRepository;
     private final BadgeService          badgeService;
 
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
     @GetMapping("/status")
     public ResponseEntity<?> getStatus(Authentication auth) {
         String userId = auth.getName();
@@ -34,12 +38,12 @@ public class CertificateController {
         boolean eligible = isEligible(user);
         boolean issued   = certificateRepository.existsByUserId(userId);
 
-        return ResponseEntity.ok(Map.of(
-                "eligible",        eligible,
-                "issued",          issued,
-                "requirements",    buildRequirements(user),
-                "readinessPercent", calculateReadiness(user)
-        ));
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("eligible",         eligible);
+        resp.put("issued",           issued);
+        resp.put("requirements",     buildRequirements(user));
+        resp.put("readinessPercent", calculateReadiness(user));
+        return ResponseEntity.ok(resp);
     }
 
     @PostMapping("/issue")
@@ -56,10 +60,10 @@ public class CertificateController {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (!isEligible(user)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                    "message", "Not yet eligible — complete all 4 skills to Level 3 first",
-                    "requirements", buildRequirements(user)
-            ));
+            Map<String, Object> err = new HashMap<>();
+            err.put("message",      "Not yet eligible — complete all 4 skills to Level 3 first");
+            err.put("requirements", buildRequirements(user));
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(err);
         }
 
         long quizCount = quizAttemptRepository.countByUserId(userId);
@@ -80,7 +84,6 @@ public class CertificateController {
 
         certificateRepository.save(cert);
 
-        // Award certified badge
         if (!user.getEarnedBadges().contains("Certified")) {
             user.getEarnedBadges().add("Certified");
             userRepository.save(user);
@@ -92,35 +95,38 @@ public class CertificateController {
     @GetMapping("/verify/{certId}")
     public ResponseEntity<?> verify(@PathVariable String certId) {
         return certificateRepository.findByCertId(certId)
-                .map(cert -> ResponseEntity.ok(Map.of(
-                        "valid",           cert.isVerified(),
-                        "certId",          cert.getCertId(),
-                        "userName",        cert.getUserName(),
-                        "estimatedBand",   cert.getEstimatedBand(),
-                        "totalPoints",     cert.getTotalPoints(),
-                        "quizzesCompleted",cert.getQuizzesCompleted(),
-                        "issuedAt",        cert.getIssuedAt()
-                )))
+                .map(cert -> {
+                    Map<String, Object> resp = new HashMap<>();
+                    resp.put("valid",            cert.isVerified());
+                    resp.put("certId",           cert.getCertId());
+                    resp.put("userName",         cert.getUserName());
+                    resp.put("estimatedBand",    cert.getEstimatedBand());
+                    resp.put("totalPoints",      cert.getTotalPoints());
+                    resp.put("quizzesCompleted", cert.getQuizzesCompleted());
+                    resp.put("issuedAt",         cert.getIssuedAt() != null
+                            ? cert.getIssuedAt().format(FMT) : null);
+                    return ResponseEntity.ok((Object) resp);
+                })
                 .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("valid", false, "message", "Certificate not found")));
     }
 
     private boolean isEligible(User user) {
         return user.getWriting().getLevel()   >= 3
-            && user.getReading().getLevel()   >= 3
-            && user.getListening().getLevel() >= 3
-            && user.getSpeaking().getLevel()  >= 3
-            && user.getEstimatedBandScore()   >= 6.0;
+                && user.getReading().getLevel()   >= 3
+                && user.getListening().getLevel() >= 3
+                && user.getSpeaking().getLevel()  >= 3
+                && user.getEstimatedBandScore()   >= 6.0;
     }
 
     private Map<String, Object> buildRequirements(User user) {
-        return Map.of(
-                "writingLevel3",   user.getWriting().getLevel()   >= 3,
-                "readingLevel3",   user.getReading().getLevel()   >= 3,
-                "listeningLevel3", user.getListening().getLevel() >= 3,
-                "speakingLevel3",  user.getSpeaking().getLevel()  >= 3,
-                "bandScore6",      user.getEstimatedBandScore()   >= 6.0
-        );
+        Map<String, Object> m = new HashMap<>();
+        m.put("writingLevel3",   user.getWriting().getLevel()   >= 3);
+        m.put("readingLevel3",   user.getReading().getLevel()   >= 3);
+        m.put("listeningLevel3", user.getListening().getLevel() >= 3);
+        m.put("speakingLevel3",  user.getSpeaking().getLevel()  >= 3);
+        m.put("bandScore6",      user.getEstimatedBandScore()   >= 6.0);
+        return m;
     }
 
     private int calculateReadiness(User user) {
@@ -135,14 +141,15 @@ public class CertificateController {
     }
 
     private Map<String, Object> buildCertResponse(Certificate cert) {
-        return Map.of(
-                "certId",           cert.getCertId(),
-                "userName",         cert.getUserName(),
-                "estimatedBand",    cert.getEstimatedBand(),
-                "totalPoints",      cert.getTotalPoints(),
-                "quizzesCompleted", cert.getQuizzesCompleted(),
-                "verifyUrl",        "https://buildme.app/verify/" + cert.getCertId(),
-                "issuedAt",         cert.getIssuedAt()
-        );
+        Map<String, Object> m = new HashMap<>();
+        m.put("certId",           cert.getCertId());
+        m.put("userName",         cert.getUserName());
+        m.put("estimatedBand",    cert.getEstimatedBand());
+        m.put("totalPoints",      cert.getTotalPoints());
+        m.put("quizzesCompleted", cert.getQuizzesCompleted());
+        m.put("verifyUrl",        "https://buildme.app/verify/" + cert.getCertId());
+        m.put("issuedAt",         cert.getIssuedAt() != null
+                ? cert.getIssuedAt().format(FMT) : null);
+        return m;
     }
 }
