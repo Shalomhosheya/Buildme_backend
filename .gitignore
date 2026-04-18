@@ -16,3 +16,6 @@ Thumbs.db
 
 *.log
 logs/
+
+.env
+application.properties
