@@ -6,6 +6,7 @@ target/
 .env
 application-local.properties
 application-prod.properties
+application.properties
 
 .idea/
 *.iml
@@ -16,6 +17,3 @@ Thumbs.db
 
 *.log
 logs/
-
-.env
-application.properties
