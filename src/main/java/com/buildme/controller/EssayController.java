@@ -108,9 +108,9 @@ public class EssayController {
                     <|end|>
                     <|user|>Task: %s\nQuestion: %s\nEssay: %s<|end|>
                     <|assistant|>""", taskType, question, essay);
-
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("ngrok-skip-browser-warning", "true");
             ResponseEntity<Map> res = restTemplate.postForEntity(
                     aiEndpoint,
                     new HttpEntity<>(Map.of("data", List.of(prompt)), headers),
