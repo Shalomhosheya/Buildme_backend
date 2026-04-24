@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -14,12 +15,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PortfolioController {
 
-    private final UserRepository           userRepository;
-    private final QuizAttemptRepository    quizAttemptRepository;
+    private final UserRepository            userRepository;
+    private final QuizAttemptRepository     quizAttemptRepository;
     private final EssayEvaluationRepository essayEvaluationRepository;
-    private final NoteRepository           noteRepository;
-    private final CertificateRepository    certificateRepository;
-
+    private final NoteRepository            noteRepository;
+    private final CertificateRepository     certificateRepository;
 
     @GetMapping
     public ResponseEntity<?> getPortfolio(Authentication auth) {
@@ -28,24 +28,26 @@ public class PortfolioController {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        long quizCount  = quizAttemptRepository.countByUserId(userId);
-        long noteCount  = noteRepository.countByUserId(userId);
-        long essayCount = essayEvaluationRepository.countByUserId(userId);
-        boolean hasCert = certificateRepository.existsByUserId(userId);
+        long    quizCount        = quizAttemptRepository.countByUserId(userId);
+        long    noteCount        = noteRepository.countByUserId(userId);
+        long    essayCount       = essayEvaluationRepository.countByUserId(userId);
+        boolean hasCert          = certificateRepository.existsByUserId(userId);
+        int     readinessPercent = calculateReadiness(user);
 
-        int readinessPercent = calculateReadiness(user);
+        // ✅ Use HashMap instead of Map.of() so we can include avatarUrl (which may be null)
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("id",                 user.getId());
+        userMap.put("name",               user.getName());
+        userMap.put("email",              user.getEmail());
+        userMap.put("totalPoints",        user.getTotalPoints());
+        userMap.put("streakDays",         user.getStreakDays());
+        userMap.put("estimatedBandScore", user.getEstimatedBandScore());
+        userMap.put("earnedBadges",       user.getEarnedBadges());
+        userMap.put("createdAt",          user.getCreatedAt());
+        userMap.put("avatarUrl",          user.getAvatarUrl()); // ✅ this is the fix
 
         return ResponseEntity.ok(Map.of(
-                "user", Map.of(
-                        "id",                 user.getId(),
-                        "name",               user.getName(),
-                        "email",              user.getEmail(),
-                        "totalPoints",        user.getTotalPoints(),
-                        "streakDays",         user.getStreakDays(),
-                        "estimatedBandScore", user.getEstimatedBandScore(),
-                        "earnedBadges",       user.getEarnedBadges(),
-                        "createdAt",          user.getCreatedAt()
-                ),
+                "user", userMap,
                 "skills", Map.of(
                         "writing",   user.getWriting(),
                         "reading",   user.getReading(),
@@ -53,11 +55,11 @@ public class PortfolioController {
                         "speaking",  user.getSpeaking()
                 ),
                 "stats", Map.of(
-                        "quizzesCompleted",    quizCount,
-                        "essaysEvaluated",     essayCount,
-                        "notesCreated",        noteCount,
-                        "certificateIssued",   hasCert,
-                        "readinessPercent",    readinessPercent
+                        "quizzesCompleted",  quizCount,
+                        "essaysEvaluated",  essayCount,
+                        "notesCreated",     noteCount,
+                        "certificateIssued",hasCert,
+                        "readinessPercent", readinessPercent
                 ),
                 "recentActivity", Map.of(
                         "recentQuizzes", quizAttemptRepository

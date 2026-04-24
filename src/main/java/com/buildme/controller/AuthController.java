@@ -67,39 +67,24 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> me(Authentication authentication) {
-
-        // 🔐 Get userId from Spring Security context
-        String userId = (String) authentication.getPrincipal();
-
-        if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Unauthorized"));
-        }
-
-        return userRepository.findById(userId)
-                .map(u -> {
-
-                    // ✅ Use HashMap (safe for null values)
-                    Map<String, Object> response = new HashMap<>();
-
-                    response.put("id", u.getId());
-                    response.put("name", u.getName());
-                    response.put("email", u.getEmail());
-                    response.put("totalPoints", u.getTotalPoints());
-                    response.put("streakDays", u.getStreakDays());
-                    response.put("estimatedBandScore", u.getEstimatedBandScore());
-                    response.put("earnedBadges", u.getEarnedBadges());
-
-                    response.put("writing", u.getWriting() != null ? u.getWriting() : "N/A");
-                    response.put("reading", u.getReading() != null ? u.getReading() : "N/A");
-                    response.put("listening", u.getListening() != null ? u.getListening() : "N/A");
-                    response.put("speaking", u.getSpeaking() != null ? u.getSpeaking() : "N/A");
-
-                    return ResponseEntity.ok(response);
-                })
-                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("message", "User not found")));
+    public ResponseEntity<?> me(Authentication auth) {
+        String userId = auth.getName();
+        return userRepository.findById(userId).map(u -> {
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("id",                 u.getId());
+            resp.put("name",               u.getName());
+            resp.put("email",              u.getEmail());
+            resp.put("totalPoints",        u.getTotalPoints());
+            resp.put("streakDays",         u.getStreakDays());
+            resp.put("estimatedBandScore", u.getEstimatedBandScore());
+            resp.put("earnedBadges",       u.getEarnedBadges());
+            resp.put("writing",            u.getWriting());
+            resp.put("reading",            u.getReading());
+            resp.put("listening",          u.getListening());
+            resp.put("speaking",           u.getSpeaking());
+            resp.put("avatarUrl",          u.getAvatarUrl());
+            return ResponseEntity.ok(resp);
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     @Data static class RegisterRequest {
