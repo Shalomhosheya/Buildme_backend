@@ -33,7 +33,7 @@ public class EssayController {
     private final EssayEvalRepo evalRepo;
     private final RestTemplate      restTemplate;
 
-    @Value("https://78db-34-21-151-187.ngrok-free.app//api/predict")
+    @Value("https://6d49-34-21-151-187.ngrok-free.app/api/predict")
     private String aiEndpoint;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
@@ -97,29 +97,39 @@ public class EssayController {
     // ── AI model call ──────────────────────────────────────────────────────
     private EvalResult tryAiEval(String essay, String question, String taskType) {
         try {
-            String prompt = String.format("""
-                    <|system|>
-                    You are an IELTS examiner. Evaluate the essay and respond ONLY with JSON:
-                    {"overall":6.5,"taskResponse":6.5,"coherenceCohesion":6.0,"lexicalResource":6.5,"grammaticalRange":7.0,
-                     "trStrengths":["..."],"trWeaknesses":["..."],"trTips":["..."],
-                     "ccStrengths":["..."],"ccWeaknesses":["..."],"ccTips":["..."],
-                     "lrStrengths":["..."],"lrWeaknesses":["..."],"lrTips":["..."],
-                     "grStrengths":["..."],"grWeaknesses":["..."],"grTips":["..."]}
-                    <|end|>
-                    <|user|>Task: %s\nQuestion: %s\nEssay: %s<|end|>
-                    <|assistant|>""", taskType, question, essay);
+            String prompt = String.format(
+                    "<|system|>\n" +
+                            "You are an IELTS examiner. Evaluate the essay and respond ONLY with JSON:\n" +
+                            "{\"overall\":6.5,\"taskResponse\":6.5,\"coherenceCohesion\":6.0,\"lexicalResource\":6.5,\"grammaticalRange\":7.0," +
+                            "\"trStrengths\":[\"...\"],\"trWeaknesses\":[\"...\"],\"trTips\":[\"...\"]," +
+                            "\"ccStrengths\":[\"...\"],\"ccWeaknesses\":[\"...\"],\"ccTips\":[\"...\"]," +
+                            "\"lrStrengths\":[\"...\"],\"lrWeaknesses\":[\"...\"],\"lrTips\":[\"...\"]," +
+                            "\"grStrengths\":[\"...\"],\"grWeaknesses\":[\"...\"],\"grTips\":[\"...\"]}\n" +
+                            "<|end|>\n" +
+                            "<|user|>Task: %s\nQuestion: %s\nEssay: %s<|end|>\n" +
+                            "<|assistant|>",
+                    taskType, question, essay
+            );
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("ngrok-skip-browser-warning", "true");
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("data", List.of(prompt));
+
             ResponseEntity<Map> res = restTemplate.postForEntity(
                     aiEndpoint,
-                    new HttpEntity<>(Map.of("data", List.of(prompt)), headers),
-                    Map.class);
+                    new HttpEntity<>(requestBody, headers),
+                    Map.class
+            );
 
             if (res.getStatusCode().is2xxSuccessful() && res.getBody() != null) {
                 return parseAiResponse(res.getBody());
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            System.err.println("AI eval failed: " + e.getMessage());
+        }
         return null;
     }
 
@@ -128,31 +138,110 @@ public class EssayController {
         try {
             List<?> data = (List<?>) body.get("data");
             if (data == null || data.isEmpty()) return null;
-            String text  = data.get(0).toString();
-            int start    = text.indexOf('{');
-            int end      = text.lastIndexOf('}') + 1;
-            if (start < 0 || end <= start) return null;
-            String json  = text.substring(start, end);
+
+            String text = data.get(0).toString();
+
+            // Fix smart quotes
+            text = text.replace("\u201c", "\"").replace("\u201d", "\"");
+            text = text.replace("\u2018", "\"").replace("\u2019", "\"");
+
+            // Extract scores directly with regex — tolerant of truncation
             EvalResult r = new EvalResult();
-            r.overall             = parseDouble(json, "overall");
-            r.taskResponse        = parseDouble(json, "taskResponse");
-            r.coherenceCohesion   = parseDouble(json, "coherenceCohesion");
-            r.lexicalResource     = parseDouble(json, "lexicalResource");
-            r.grammaticalRange    = parseDouble(json, "grammaticalRange");
-            r.trStrengths  = parseArray(json, "trStrengths");
-            r.trWeaknesses = parseArray(json, "trWeaknesses");
-            r.trTips       = parseArray(json, "trTips");
-            r.ccStrengths  = parseArray(json, "ccStrengths");
-            r.ccWeaknesses = parseArray(json, "ccWeaknesses");
-            r.ccTips       = parseArray(json, "ccTips");
-            r.lrStrengths  = parseArray(json, "lrStrengths");
-            r.lrWeaknesses = parseArray(json, "lrWeaknesses");
-            r.lrTips       = parseArray(json, "lrTips");
-            r.grStrengths  = parseArray(json, "grStrengths");
-            r.grWeaknesses = parseArray(json, "grWeaknesses");
-            r.grTips       = parseArray(json, "grTips");
+            r.overall           = extractDouble(text, "overall",           6.0);
+            r.taskResponse      = extractDouble(text, "taskResponse",      6.0);
+            r.coherenceCohesion = extractDouble(text, "coherenceCohesion", 6.0);
+            r.lexicalResource   = extractDouble(text, "lexicalResource",   6.0);
+            r.grammaticalRange  = extractDouble(text, "grammaticalRange",  6.0);
+
+            // Validate scores are in IELTS range
+            if (r.overall < 1.0 || r.overall > 9.0) return null;
+
+            r.trStrengths  = extractArray(text, "trStrengths");
+            r.trWeaknesses = extractArray(text, "trWeaknesses");
+            r.trTips       = extractArray(text, "trTips");
+            r.ccStrengths  = extractArray(text, "ccStrengths");
+            r.ccWeaknesses = extractArray(text, "ccWeaknesses");
+            r.ccTips       = extractArray(text, "ccTips");
+            r.lrStrengths  = extractArray(text, "lrStrengths");
+            r.lrWeaknesses = extractArray(text, "lrWeaknesses");
+            r.lrTips       = extractArray(text, "lrTips");
+            r.grStrengths  = extractArray(text, "grStrengths");
+            r.grWeaknesses = extractArray(text, "grWeaknesses");
+            r.grTips       = extractArray(text, "grTips");
+
+            System.out.println("✅ AI eval success — overall: " + r.overall);
             return r;
-        } catch (Exception e) { return null; }
+
+        } catch (Exception e) {
+            System.err.println("Parse failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // Extract a double value by key name using regex
+    private double extractDouble(String json, String key, double fallback) {
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                    "\"" + key + "\"\\s*:\\s*([0-9]+\\.?[0-9]*)"
+            );
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) return Double.parseDouble(m.group(1));
+        } catch (Exception ignored) {}
+        return fallback;
+    }
+
+    // Extract array items by key name — handles truncation gracefully
+    private List<String> extractArray(String json, String key) {
+        List<String> result = new ArrayList<>();
+        try {
+            // Find the array start
+            int keyIdx = json.indexOf("\"" + key + "\"");
+            if (keyIdx < 0) return result;
+
+            int arrStart = json.indexOf('[', keyIdx);
+            if (arrStart < 0) return result;
+
+            int arrEnd = json.indexOf(']', arrStart);
+            // If no closing bracket (truncated), use what we have
+            String arrContent = arrEnd > 0
+                    ? json.substring(arrStart + 1, arrEnd)
+                    : json.substring(arrStart + 1);
+
+            // Extract each quoted string item
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                    "\"((?:[^\"\\\\]|\\\\.)*)\""
+            );
+            java.util.regex.Matcher m = p.matcher(arrContent);
+            while (m.find()) {
+                String val = m.group(1).trim();
+                if (!val.isEmpty() && !val.equals("...")) {
+                    result.add(val);
+                }
+            }
+        } catch (Exception ignored) {}
+        return result;
+    }
+
+    // ── Jackson helpers ────────────────────────────────────────────────────────
+    private double getDouble(com.fasterxml.jackson.databind.JsonNode node,
+                             String field, double fallback) {
+        try {
+            return node.has(field) ? node.get(field).asDouble() : fallback;
+        } catch (Exception e) { return fallback; }
+    }
+
+    private List<String> getArray(com.fasterxml.jackson.databind.JsonNode node,
+                                  String field) {
+        List<String> result = new ArrayList<>();
+        try {
+            if (node.has(field) && node.get(field).isArray()) {
+                node.get(field).forEach(item -> {
+                    String val = item.asText().trim();
+                    if (!val.isEmpty() && !val.equals("...")) result.add(val);
+                });
+            }
+        } catch (Exception ignored) {}
+        return result;
     }
 
     // ── Rule-based fallback ────────────────────────────────────────────────
