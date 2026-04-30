@@ -33,7 +33,7 @@ public class EssayController {
     private final EssayEvalRepo evalRepo;
     private final RestTemplate      restTemplate;
 
-    @Value("${app.ai.endpoint:http://localhost:7860/api/predict}")
+    @Value("https://78db-34-21-151-187.ngrok-free.app//api/predict")
     private String aiEndpoint;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
